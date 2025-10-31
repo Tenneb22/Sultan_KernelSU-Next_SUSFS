@@ -1,4 +1,5 @@
 name: Sultan
+description: Build Sultan Kernel with KernelSU Next and SUSFS
 permissions:
   contents: write  # Allow writing to repository contents (for pushing tags)
   actions: write   # Allows triggering actions
