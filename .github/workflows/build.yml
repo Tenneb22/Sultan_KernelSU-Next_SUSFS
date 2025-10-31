@@ -74,6 +74,8 @@ jobs:
           git clone https://github.com/kerneltoast/${{ inputs.repo }}
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b "$SUSFS_BRANCH"
           cd susfs4ksu
+
+          # Version: 1.5.12
           git checkout f16560ce8263fbfa9b2f259e9531f72d6fda4e3f
       
       - name: Add KernelSU
