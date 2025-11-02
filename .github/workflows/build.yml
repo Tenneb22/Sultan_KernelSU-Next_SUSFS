@@ -10,7 +10,7 @@ on:
       codename:
         required: true
         type: string
-      repo:
+      KERNEL_REPO:
         required: true
         type: string
       android_version:
@@ -48,14 +48,14 @@ jobs:
           tar -xf x86_64-gcc-14.2.0-nolibc-aarch64-linux.tar
           echo "GCC 14.2.0 toolchain extracted successfully"
 
-      - name: Set CONFIG Environment Variable
+      - name: Set KERNEL_REPO Environment Variable
         run: |
-          CONFIG="${{ inputs.repo }}"
+          KERNEL_REPO="${{ inputs.KERNEL_REPO }}" # Originally CONFIG
           
-          # Set CONFIG as an environment variable for future steps
-          echo "CONFIG=$CONFIG" >> $GITHUB_ENV
+          # Set KERNEL_REPO as an environment variable for future steps
+          echo "KERNEL_REPO=$KERNEL_REPO" >> $GITHUB_ENV
           
-          echo "CONFIG set to: $CONFIG"
+          echo "KERNEL_REPO set to: $KERNEL_REPO"
 
       - name: Clone AnyKernel3 and Other Dependencies
         run: |
@@ -68,10 +68,10 @@ jobs:
           echo "Using branch for AnyKernel3: $ANYKERNEL_BRANCH"
           echo "Using branch for SUSFS: $SUSFS_BRANCH"
 
-          # Clone repositories using the branch names
+          # Clone KERNEL_REPOsitories using the branch names
           git clone https://github.com/TheWildJames/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
           git clone https://github.com/TheWildJames/kernel_patches.git
-          git clone https://github.com/kerneltoast/${{ inputs.repo }}
+          git clone https://github.com/kerneltoast/${{ inputs.KERNEL_REPO }}
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b "$SUSFS_BRANCH"
           cd susfs4ksu
 
@@ -80,16 +80,16 @@ jobs:
       
       - name: Add KernelSU
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "$KERNEL_REPO"
           
           echo "Adding KernelSU..."
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
 
       - name: Apply SUSFS Patches
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "$KERNEL_REPO"
           
           echo "Applying SUSFS patches..."
           
@@ -122,15 +122,15 @@ jobs:
 
       - name: Apply KSU Hooks
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "$KERNEL_REPO"
           # Apply additional patch
           cp ../kernel_patches/wild/hooks/syscall_hooks.patch ./
           patch -p1 -F 3 < syscall_hooks.patch
 
       - name: Configure KernelSU
         run: |
-          cd "$CONFIG"
+          cd "$KERNEL_REPO"
           # KernelSU Configuration
           echo "# KernelSU Configuration" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_KSU=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
@@ -138,7 +138,7 @@ jobs:
 
       - name: Configure Mountify Support
         run: |
-          cd "$CONFIG"
+          cd "$KERNEL_REPO"
           # Mountify Support
           echo "# Mountify Support" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_TMPFS_XATTR=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
@@ -146,7 +146,7 @@ jobs:
 
       - name: Configure Networking
         run: |
-          cd "$CONFIG"
+          cd "$KERNEL_REPO"
           # Networking Configuration
           echo "# Networking Configuration" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_IP_NF_TARGET_TTL=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
@@ -155,7 +155,7 @@ jobs:
 
       - name: Configure TCP Congestion Control
         run: |
-          cd "$CONFIG"
+          cd "$KERNEL_REPO"
           # BBR TCP Congestion Control
           echo "# BBR TCP Congestion Control" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_TCP_CONG_ADVANCED=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
@@ -167,7 +167,7 @@ jobs:
 
       - name: Configure IPSet Support
         run: |
-          cd "$CONFIG"
+          cd "$KERNEL_REPO"
           # IPSet support
           echo "# IPSet Support" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_IP_SET=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
@@ -191,7 +191,7 @@ jobs:
 
       - name: Configure SUSFS
         run: |
-          cd "$CONFIG"
+          cd "$KERNEL_REPO"
           # SUSFS Configuration
           echo "# SUSFS Configuration" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_KSU_SUSFS=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
@@ -216,24 +216,24 @@ jobs:
 
       - name: Run sed and perl Commands
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "$KERNEL_REPO"
           
           echo "Running sed commands..."
           sed -i 's/CONFIG_LOCALVERSION="-Sultan"/CONFIG_LOCALVERSION="-Sultan-Wild"/' ./arch/arm64/configs/${{ inputs.codename }}_defconfig
 
       - name: Build the Kernel
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "$KERNEL_REPO"
           
           make CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux- CC=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-gcc -j$(nproc --all) ${{ inputs.codename }}_defconfig
           make CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux- CC=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-gcc -j$(nproc --all)
 
       - name: Copy Images
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "$KERNEL_REPO"
 
           echo "Copying Image.lz4 and concatenating DTB files..."
           cp ./out/arch/arm64/boot/Image.lz4 ../AnyKernel3/Image.lz4
