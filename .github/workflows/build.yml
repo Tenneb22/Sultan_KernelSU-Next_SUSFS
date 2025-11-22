@@ -104,13 +104,13 @@ jobs:
           echo "Applying SUSFS patches..."
 
           # Copy SUSFS patches
-          cp "${WORKSPACE}/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" "${KERNEL_REPO}/KernelSU/"
+          cp "${WORKSPACE}/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" "${KERNEL_REPO}/KernelSU-Next/"
           cp "${WORKSPACE}/susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch" "${KERNEL_REPO}/"
           cp "${WORKSPACE}/susfs4ksu/kernel_patches/fs/*" "${KERNEL_REPO}/fs/"
           cp "${WORKSPACE}/susfs4ksu/kernel_patches/include/linux/*" "${KERNEL_REPO}/include/linux/"
            
           # Apply SUFS patches
-          cd "${KERNEL_REPO}/KernelSU/"
+          cd "${KERNEL_REPO}/KernelSU-Next/"
           patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
 
           cd "${KERNEL_REPO}/"
@@ -118,16 +118,16 @@ jobs:
 
           # Idk if they are needed
 
-          cd "${KERNEL_REPO}/KernelSU/"
+          cd "${KERNEL_REPO}/KernelSU-Next/"
 
           echo "Applying wild SUSFS Fix patches..."
-          cp "${WORKSPACE}/kernel_patches/wild/susfs_fix_patches/v1.5.12/fix_core_hook.c.patch" "${KERNEL_REPO}/KernelSU/"
+          cp "${WORKSPACE}/kernel_patches/wild/susfs_fix_patches/v1.5.12/fix_core_hook.c.patch" "${KERNEL_REPO}/KernelSU-Next/"
           patch -p1 --forward < fix_core_hook.c.patch
 
-          cp "${WORKSPACE}/kernel_patches/wild/susfs_fix_patches/v1.5.12/fix_sucompat.c.patch" "${KERNEL_REPO}/KernelSU/"
+          cp "${WORKSPACE}/kernel_patches/wild/susfs_fix_patches/v1.5.12/fix_sucompat.c.patch" "${KERNEL_REPO}/KernelSU-Next/"
           patch -p1 --forward < fix_sucompat.c.patch
 
-          cp "${WORKSPACE}/kernel_patches/wild/susfs_fix_patches/v1.5.12/fix_kernel_compat.c.patch" "${KERNEL_REPO}/KernelSU/"
+          cp "${WORKSPACE}/kernel_patches/wild/susfs_fix_patches/v1.5.12/fix_kernel_compat.c.patch" "${KERNEL_REPO}/KernelSU-Next/"
           patch -p1 --forward < fix_kernel_compat.c.patch
           
           # Change to common directory and apply SUSFS patch
