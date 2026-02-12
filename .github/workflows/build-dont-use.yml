@@ -53,14 +53,18 @@ jobs:
       - name: Set KERNEL_REPO Environment Variable
         env:
           WORKSPACE: ${{ github.workspace }}
-          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_REPO: "android_kernel_google_tensynos" #${{ inputs.repo }}
         run: |
-          CONFIG="${{ inputs.repo }}"
-          
-          # Set CONFIG as an environment variable for future steps
-          echo "CONFIG=$CONFIG" >> $GITHUB_ENV
-          
-          echo "CONFIG set to: $CONFIG"
+
+          # Prefer an absolute path inside the runner workspace so later steps
+          # can `cd` into the kernel repo reliably.
+          KERNEL_REPO="${WORKSPACE}/${INPUT_REPO}"
+
+          # Export for subsequent steps
+          echo "KERNEL_REPO=${KERNEL_REPO}" >> "$GITHUB_ENV"
+          echo "WORKSPACE=${WORKSPACE}" >> "$GITHUB_ENV"
+
+          echo "KERNEL_REPO set to: ${KERNEL_REPO}"
 
       - name: Clone AnyKernel3 and Other Dependencies
         run: |
@@ -74,62 +78,57 @@ jobs:
           echo "Using branch for AnyKernel3: $ANYKERNEL_BRANCH"
 
           # Clone repositories using the branch names
-          git clone https://github.com/TheWildJames/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
-          git clone https://github.com/TheWildJames/kernel_patches.git
-          git clone https://github.com/kerneltoast/${{ inputs.repo }}
+          git clone https://github.com/WildKernels/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
+          git clone https://github.com/WildKernels/kernel_patches.git
+          git clone https://github.com/kerneltoast/${INPUT_REPO}
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b "$SUSFS_BRANCH"
-          cd susfs4ksu
-          git checkout f16560ce8263fbfa9b2f259e9531f72d6fda4e3f
-      
-      - name: Add KernelSU
-        run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
           
-          echo "Adding KernelSU..."
-          curl -LSs "https://raw.githubusercontent.com/WildKernels/Wild_KSU/wild/kernel/setup.sh" | bash -s wild
+          cd susfs4ksu
+          ## Version: 1.5.12
+          #git checkout f16560ce8263fbfa9b2f259e9531f72d6fda4e3f
+      
+          # Version: 2.0.0 ?
+          git checkout a162e2469d0b472545e5e46457eee171c0975fb0 # remove?
+
+      - name: Add KernelSU Next
+        run: |
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "${KERNEL_REPO}"
+          
+          echo "Adding KernelSU Next..."
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
 
       - name: Apply SUSFS Patches
-        if: ${{ matrix.variant != 'WKSU' }}
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-          
+
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "${KERNEL_REPO}"
+
           echo "Applying SUSFS patches..."
 
           # Copy SUSFS patches
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch ./
-          cp ../susfs4ksu/kernel_patches/fs/* ./fs/
-          cp ../susfs4ksu/kernel_patches/include/linux/* ./include/linux/
-
-          cd ./Wild_KSU
-          
-          echo "Applying wild SUSFS patches..."
-          cp ../../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./
+          cp "${WORKSPACE}/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" "${KERNEL_REPO}/KernelSU-Next/"
+          cp "${WORKSPACE}/susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch" "${KERNEL_REPO}/"
+          cp ${WORKSPACE}/susfs4ksu/kernel_patches/fs/* "${KERNEL_REPO}/fs/"
+          cp ${WORKSPACE}/susfs4ksu/kernel_patches/include/linux/* "${KERNEL_REPO}/include/linux/"
+           
+          # Apply SUFS patches
+          cd "${KERNEL_REPO}/KernelSU-Next/"
           patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true
 
-          echo "Applying wild SUSFS Fix patches..."
-          cp ../../kernel_patches/wild/susfs_fix_patches/v1.5.12/fix_core_hook.c.patch ./
-          patch -p1 --forward < fix_core_hook.c.patch
-
-          cp ../../kernel_patches/wild/susfs_fix_patches/v1.5.12/fix_sucompat.c.patch ./
-          patch -p1 --forward < fix_sucompat.c.patch
-
-          cp ../../kernel_patches/wild/susfs_fix_patches/v1.5.12/fix_kernel_compat.c.patch ./
-          patch -p1 --forward < fix_kernel_compat.c.patch
-          
           # Change to common directory and apply SUSFS patch
-          cd ..
+          cd "${KERNEL_REPO}"
           patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
-          cp ../kernel_patches/sultan/sys.c_fix.patch ./
-          patch -p1 --fuzz=3 < sys.c_fix.patch
+          
+          cp "${WORKSPACE}/kernel_patches/sultan/sys.c_fix.patch" "${KERNEL_REPO}/"
+          patch -p1 < sys.c_fix.patch  
 
       - name: Apply KSU Hooks
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "$KERNEL_REPO"
           # Apply additional patch
-          cp ../kernel_patches/wild/hooks/syscall_hooks.patch ./
+          cp "${WORKSPACE}/kernel_patches/wild/hooks/syscall_hooks.patch" "${KERNEL_REPO}/"
           patch -p1 -F 3 < syscall_hooks.patch
 
       - name: Configure KernelSU
@@ -200,23 +199,39 @@ jobs:
       - name: Minimal Droidspaces Support
         if: ${{ matrix.variant == 'SHEDOWE' }}
         run: |
-          cd "$CONFIG"
+          cd "$KERNEL_REPO"
           # SUSFS Configuration
           echo "# SUSFS Configuration" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_KSU_SUSFS=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          
+          cd "$CONFIG"
+          # Minimal Droidspaces Support
+          echo "# Minimal Droidspaces Support" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "# Copyright (C) 2025 ravindu644 <droidcasts@protonmail.com>" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
 
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "# IPC mechanisms (required for tools that rely on shared memory and IPC namespaces)" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_SYSCTL=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_SYSVIPC=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_POSIX_MQUEUE=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
 
-          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
-          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
-          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
-          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "# Core namespace support (essential for assigning PID 1 and running any init system)" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_NAMESPACES=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_PID_NS=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_UTS_NS=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_IPC_NS=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "# Primarily needed for older kernels (3.x)" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_MNT_NS=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+
+          echo "# Control groups support (required for systemd)" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_CGROUPS=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_CGROUP_DEVICE=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_MEMCG=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+
+          echo "# Device filesystem support (enables hardware access when --hw-access is enabled)" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
+          echo "CONFIG_DEVTMPFS=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
 
           echo "# Firmware loading support (optional, used when --hw-access is enabled)" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
           echo "CONFIG_FW_LOADER=y" >> ./arch/arm64/configs/${{ inputs.codename }}_defconfig
@@ -225,8 +240,8 @@ jobs:
       
       - name: Run sed and perl Commands
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "${KERNEL_REPO}"
           
           echo "Running sed commands..."
 
@@ -236,8 +251,8 @@ jobs:
 
       - name: Build the Kernel
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
+          echo "Changing to configuration directory: $KERNEL_REPO..."
+          cd "$KERNEL_REPO"
           
           make CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux- CC=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-gcc -j$(nproc --all) ${{ inputs.codename }}_defconfig
           make CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux- CC=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-gcc -j$(nproc --all)
@@ -264,7 +279,7 @@ jobs:
           cd ./AnyKernel3
 
           # Zip the files in the AnyKernel3 directory with a new naming convention
-          ZIP_NAME="${{ inputs.codename }}_A16_Sultan_WKSU_SUSFS.zip"
+          ZIP_NAME="${{ matrix.variant }}-${{ inputs.codename }}_A16_Sultan_KSUN_SUSFS.zip"
           echo "Creating zip file $ZIP_NAME..."
           zip -r "../$ZIP_NAME" ./*
 

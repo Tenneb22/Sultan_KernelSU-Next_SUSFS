@@ -1,0 +1,207 @@
+# Only for Google Pixel 8 (shiba) for now
+
+name: Build Kernel
+permissions:
+  contents: write  # Allow writing to repository contents (for pushing tags)
+  actions: write   # Allows triggering actions
+
+on:
+  workflow_dispatch:
+
+env:
+    CODENAME: "shiba"
+    KERNEL_REPO: "android_kernel_google_tensynos"
+    ANDROID_VERSION: "android14" # the kernel android version from lmk or so idk
+    KERNEL_VERSION: "6.1"
+    # ROOT: ${{ github.workspace }} # $GITHUB_WORKSPACE already exists and is the default working directory.
+    SUSFS_BRANCH: "sultan-shiba-susfs-minimal"
+    ANYKERNEL_BRANCH: "sultan-zuma" # For the AnyKernel Repo from WildKernels
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Download and extract GCC 14.2.0 toolchain
+        run: |
+          echo "Downloading GCC 14.2.0 cross-compiler toolchain..."
+          wget https://www.kernel.org/pub/tools/crosstool/files/bin/x86_64/14.2.0/x86_64-gcc-14.2.0-nolibc-aarch64-linux.tar.gz
+          echo "Extracting .gz file..."
+          gunzip x86_64-gcc-14.2.0-nolibc-aarch64-linux.tar.gz
+          echo "Extracting .tar file..."
+          tar -xf x86_64-gcc-14.2.0-nolibc-aarch64-linux.tar
+          echo "GCC 14.2.0 toolchain extracted successfully"
+
+      - name: Clone Dependencies
+        run: |
+
+          echo "Cloning Dependencies..."
+          git clone -b "${{ env.ANYKERNEL_BRANCH }}" https://github.com/WildKernels/AnyKernel3.git
+          git clone https://github.com/kerneltoast/${{ env.KERNEL_REPO }}.git
+          git clone -b "${{ env.SUSFS_BRANCH }}" https://gitlab.com/simonpunk/susfs4ksu.git
+          git clone https://github.com/WildKernels/kernel_patches.git
+
+          # Checkout to a specific version/commit of susfs4ksu ???
+
+      - name: Add KernelSU Next
+        run: |
+
+          echo "Changing to kernel repository: ${{ env.KERNEL_REPO }}"
+          cd "${{ env.KERNEL_REPO }}"
+
+          echo "Adding KernelSU Next..."
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+      
+      - name: Apply Patches
+        run: bash ./github/scripts/apply-patches.sh
+
+      - name: Configure
+        run: |
+          cd "${{ env.KERNEL_REPO }}"
+
+          echo "Configuring..."
+
+          # echo "CONFIG_KSU=y" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+
+          # KernelSU Next Configuration
+          echo "# KernelSU Configuration" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+          echo "CONFIG_KSU=y" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+
+          echo "# SUSFS Configuration" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+          echo "CONFIG_KSU_SUSFS=y" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+################################################
+      - name: Run sed and perl Commands
+        run: |
+          cd "${{ env.KERNEL_REPO }}"
+          
+          echo "Running sed commands..."
+
+          sed -i 's/CONFIG_LOCALVERSION="-Sultan"/CONFIG_LOCALVERSION="-Sultan-KSUN-SUSFS"/' ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+
+      - name: Build the Kernel
+        run: |
+          cd "${{ env.KERNEL_REPO }}"
+
+          echo "Building the kernel..."
+          
+          make CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux- CC=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-gcc -j$(nproc --all) ${{ env.CODENAME }}_defconfig
+          make CROSS_COMPILE=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux- CC=$GITHUB_WORKSPACE/gcc-14.2.0-nolibc/aarch64-linux/bin/aarch64-linux-gcc -j$(nproc --all)
+
+      - name: Copy Images
+        run: |
+          cd "${{ env.KERNEL_REPO }}"
+
+          echo "Copying Image.lz4 and concatenating DTB files..."
+          cp ./out/arch/arm64/boot/Image.lz4 ../AnyKernel3/Image.lz4
+          if [ "${{ env.CODENAME }}" == "shiba" ]; then
+
+
+            # is /shiba/ correct here?
+
+            cat ./out/google-devices/shiba/dts/*.dtb > ../AnyKernel3/dtb
+          fi
+
+      - name: Create ZIP Files for Different Formats
+        run: |
+          echo "Navigating to AnyKernel3 directory..."
+          cd ./AnyKernel3
+
+          # Zip the files in the AnyKernel3 directory with a new naming convention
+          ZIP_NAME="${{ env.CODENAME }}_A16_Sultan_KSUN_SUSFS.zip"
+          echo "Creating zip file $ZIP_NAME..."
+          zip -r "../$ZIP_NAME" ./*
+
+      ########################
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ env.CODENAME }}
+          path: |
+            *.zip
+      #########################
+
+  trigger-release:
+    runs-on: ubuntu-latest
+    needs: build
+
+    env:
+      REPO_OWNER: ${{ github.repository_owner }}
+      REPO_NAME: ${{ github.event.repository.name }}
+      RELEASE_NAME: "KernelSU Next with SUSFS"
+      RELEASE_NOTES: |
+        # KernelSU Next with SUSFS
+
+        This release includes the latest build of KernelSU Next integrated with SUSFS v2.0.0.
+
+        ## Features
+        - [x] KernelSU Next
+        - [x] SUSFS v2.0.0
+#########################
+    steps:
+      # Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Get the Latest Tag from GitHub
+      - name: Generate and Create New Tag
+        run: |
+            # Fetch the latest tag from GitHub (this is the latest tag based on the GitHub API)
+            LATEST_TAG=$(gh api repos/$REPO_OWNER/$REPO_NAME/tags --jq '.[0].name')
+            if [ -z "$LATEST_TAG" ]; then
+              LATEST_TAG="v2.0.0-r0"  # Default to v1.5.7-0 if no tag exists
+            fi
+            
+            # Increment the suffix (e.g., v1.5.7-0 becomes v1.5.7-1)
+            NEW_TAG=$(echo "$LATEST_TAG" | awk -F'-r' '{suffix=$2; if (!suffix) suffix=0; suffix++; printf "%s-r%d", $1, suffix}')
+            
+            # Output the new tag to be used
+            echo "New tag: $NEW_TAG"
+            
+            # Set the new tag as an environment variable to be used in later steps
+            echo "NEW_TAG=${NEW_TAG}" >> $GITHUB_ENV
+            
+            # Create the tag in the repository
+            git tag $NEW_TAG
+            git push origin $NEW_TAG
+            
+      # Download Artifacts for A12 (Only if A12 Build is successful or input is true or empty)
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./downloaded-artifacts
+
+      # Create GitHub Release and upload files if make_release is true
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ env.NEW_TAG }}  # Use the generated tag for the release
+          release_name: ${{ env.RELEASE_NAME }}  # Pass the RELEASE_NAME to the action
+          body: ${{ env.RELEASE_NOTES }}  # Pass the RELEASE_NOTES to the action
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Assets Dynamically
+        run: |
+          # Loop through all files in the downloaded-artifacts directory
+          for file in ./downloaded-artifacts/kernel-*/*; do
+              # Skip directories
+              if [ -d "$file" ]; then
+                  continue
+              fi
+
+              # Upload the file to the GitHub release
+              echo "Uploading $file..."
+              gh release upload ${{ env.NEW_TAG }} "$file"
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: ${{ env.NEW_TAG }}
+
+      # Display Files Uploaded
+      - name: Display Files Uploaded
+        run: |
+          echo "GitHub release created with the following files:"
+          ls ./downloaded-artifacts/**/*
