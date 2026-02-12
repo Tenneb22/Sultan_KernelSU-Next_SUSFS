@@ -53,7 +53,7 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
       
       - name: Apply Patches
-        run: bash ./github/scripts/apply-patches.sh
+        run: bash ./.github/scripts/apply-patches.sh
 
       - name: Configure
         run: |
