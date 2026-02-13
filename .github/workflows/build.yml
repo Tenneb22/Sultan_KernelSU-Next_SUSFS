@@ -34,7 +34,7 @@ jobs:
           <?xml version="1.0" encoding="UTF-8"?>
           <manifest>
             <remote name="tensynos" fetch="https://github.com/kerneltoast/" />
-            <remove-project name="kernel/google/shusky" />
+            <remove-project name="device/google/shusky" />
             <project path="private/devices/google/shusky" name="android_kernel_google_tensynos" remote="tensynos" revision="16.0.0-sultan" />
           </manifest>
           EOF
