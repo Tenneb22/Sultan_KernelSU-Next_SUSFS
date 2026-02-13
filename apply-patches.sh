@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 #env:
 #           #CODENAME: "shiba"
 # KERNEL_REPO: "android_kernel_google_tensynos"
@@ -16,13 +18,13 @@ echo "Applying Patches..."
 #echo "Applying SUSFS Patches..."
 
 # -------
-cd "$GITHUB_WORKSPACE/$SUSFS_BRANCH"
+cd "$GITHUB_WORKSPACE"/susfs4ksu/
 
 cp ./kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch "$GITHUB_WORKSPACE/$KERNEL_REPO"/KernelSU-Next/
 #cp ./kernel_patches/50_add_susfs_in_kernel-${KERNEL_VERSION}.patch $KERNEL_REPO/ # wrong path?
-cp ./kernel_patches/50_add_susfs_in_gki-"${ANDROID_VERSION}"-"${KERNEL_VERSION}".patch "$GITHUB_WORKSPACE/$KERNEL_REPO"/
-cp ./kernel_patches/fs/* "$GITHUB_WORKSPACE/$KERNEL_REPO"/fs/
-cp ./kernel_patches/include/linux/* "$GITHUB_WORKSPACE/$KERNEL_REPO"/include/linux/
+cp ./kernel_patches/50_add_susfs_in_gki-"${ANDROID_VERSION}"-"${KERNEL_VERSION}".patch "$GITHUB_WORKSPACE"/"$KERNEL_REPO"/
+cp -r ./kernel_patches/fs/* "$GITHUB_WORKSPACE/$KERNEL_REPO"/fs/
+cp -r ./kernel_patches/include/linux/* "$GITHUB_WORKSPACE/$KERNEL_REPO"/include/linux/
 
 # -------
 cd "$GITHUB_WORKSPACE/$KERNEL_REPO/KernelSU-Next"

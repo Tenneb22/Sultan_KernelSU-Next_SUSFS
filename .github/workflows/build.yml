@@ -1,0 +1,107 @@
+name: Pixel 8 (shiba) Custom Kernel
+on:
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Reclaim ~30GB+ of disk space (Essential for Bazel)
+      - name: Maximize Build Space
+        uses: hugoalh/disk-space-optimizer-ghaction@v0.8.0
+        with:
+          operate_sudo: true
+          general_include: |
+            /usr/local/lib/android
+            /usr/share/dotnet
+          docker_clean: true
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y repo python3-pip patch curl git
+
+      # 2. Setup the Workspace with Sultan's Tensynos Repo
+      - name: Initialize and Sync
+        run: |
+          mkdir kernel && cd kernel
+          # Initialize the official Google manifest for Pixel 8 (shusky branch)
+          repo init -u https://android.googlesource.com/kernel/manifest -b android-gs-shusky-6.1-android16
+          
+          # Use a local manifest to replace the standard shusky source with Sultan's Tensynos
+          mkdir -p.repo/local_manifests
+          cat <<EOF >.repo/local_manifests/tensynos.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <remote name="tensynos" fetch="https://github.com/kerneltoast/" />
+            <remove-project name="kernel/google/shusky" />
+            <project path="private/devices/google/shusky" name="android_kernel_google_tensynos" remote="tensynos" revision="16.0.0-sultan" />
+          </manifest>
+          EOF
+          
+          repo sync -c -j$(nproc) --force-sync
+
+      # 3. Patching Phase
+      - name: Integrate KernelSU Next & SUSFS
+        run: |
+          cd kernel/common
+          # Integrate KernelSU Next
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+          
+          # Apply SUSFS patches (Replace URLs with the specific ones from your reference)
+          
+          curl -o KernelSU-Next/susfs.patch https://gitlab.com/simonpunk/susfs4ksu/-/raw/sultan-shiba-susfs-minimal/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+          cd KernelSU-Next && patch -p1 < susfs.patch && cd ..
+          
+          curl -o add_susfs_in_kernel.patch https://gitlab.com/simonpunk/susfs4ksu/-/raw/sultan-shiba-susfs-minimal/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch
+          patch -p1 < add_susfs_in_kernel.patch
+          
+          curl -o fs/susfs.c https://gitlab.com/simonpunk/susfs4ksu/-/raw/sultan-shiba-susfs-minimal/kernel_patches/fs/susfs.c
+          curl -o include/linux/susfs.h https://gitlab.com/simonpunk/susfs4ksu/-/raw/sultan-shiba-susfs-minimal/kernel_patches/include/linux/susfs.h
+          curl -o include/linux/susfs_def.h https://gitlab.com/simonpunk/susfs4ksu/-/raw/sultan-shiba-susfs-minimal/kernel_patches/include/linux/susfs_def.h
+          
+          # CRITICAL: Delete ABI protection to allow Wi-Fi and Bluetooth to work
+          rm --force android/abi_gki_protected_exports_*
+
+      # 4. Configuration Phase
+      - name: Create Config Fragment
+        run: |
+          # Enable your specific features without touching the main defconfig
+          cat <<EOF > kernel/common/arch/arm64/configs/ksu_susfs_config.fragment
+          # KSU Configuration
+          CONFIG_KSU=y
+          
+          # SUSFS Configuration
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+          EOF
+
+      # 5. Compilation Phase (Using the shiba_dist target)
+      - name: Bazel Build (Kleaf)
+        run: |
+          cd kernel
+          # 'run' is used for distribution targets to automatically collect outputs
+          # --config=fast includes LTO=thin automatically
+          tools/bazel run //private/devices/google/shusky:shiba_dist -- \
+            --dist_dir=out/dist \
+            --config=fast \
+            --lto=thin \
+            --defconfig_fragment=//common:arch/arm64/configs/ksu_susfs_config.fragment
+
+      # 6. AnyKernel3 Packaging
+      - name: Package with AnyKernel3
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3
+          # Copy the compressed kernel image
+          cp kernel/out/dist/Image.lz4 AnyKernel3/
+          # Configure AnyKernel3 for the Pixel 8 (Slot device, init_boot)
+          sed -i 's/is_slot_device=0/is_slot_device=1/' AnyKernel3/anykernel.sh
+          cd AnyKernel3 && zip -r9../shiba-kernel-ksu-next.zip *
+
+      - name: Upload Result
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shiba-Tensynos-KSU-SUSFS
+          path: shiba-kernel-ksu-next.zip

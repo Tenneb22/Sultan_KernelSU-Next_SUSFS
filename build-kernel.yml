@@ -73,6 +73,11 @@ jobs:
           echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
           echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
           echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+
+          echo "CONFIG_LTO=n" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+          echo "CONFIG_LTO_CLANG=n" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+          echo "CONFIG_CC_WERROR=n" >> ./arch/arm64/configs/${{ env.CODENAME }}_defconfig
+
 ################################################
       - name: Run sed and perl Commands
         run: |
